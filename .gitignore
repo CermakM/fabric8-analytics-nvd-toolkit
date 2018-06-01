@@ -9,7 +9,7 @@
 
 # Exceptions in the examples folder
 !examples/export/
-!examples/*.ipynb
+!examples/example_*.ipynb
 
 # Virtual env directory
 venv/
