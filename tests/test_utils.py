@@ -1,8 +1,10 @@
 """Tests for utils module."""
 
+import json
 import unittest
 
-from nvdlib.nvd import NVD
+from nvdlib import model
+from nvdlib.collection import Collection
 
 from toolkit import utils
 from toolkit.preprocessing.handlers import GitHubHandler, StatusError
@@ -71,16 +73,26 @@ class TestUtils(unittest.TestCase):
     def test_get_reference(self):
         """Test utils.get_reference() function."""
         # Create sample extensible cve object for testing
-        cve = type('', (), {})
-        cve.references = TEST_REFERENCE_PATTERNS.keys()
+        doc = type('', (), {})
+        doc.cve = type('', (), {})
+
+        class _Reference:
+            def __init__(self, s): self.url = s  # pylint: disable=multiple-statements
+
+        doc.cve.references = [
+            _Reference(k) for k in TEST_REFERENCE_PATTERNS.keys()
+        ]
+
         # test urls
-        ret = utils.get_reference(cve, url=TEST_REFERENCE_HTTP)
+        ret = utils.get_reference(doc, url=TEST_REFERENCE_HTTP)
+
         self.assertEqual(ret, TEST_REFERENCE_HTTP)
 
         for k, v in TEST_REFERENCE_PATTERNS.items():  # pylint: disable=invalid-name
             # test  patterns
-            cve.references = [k]
-            ret = utils.get_reference(cve, pattern='github')
+            doc.cve.references = [_Reference(k)]
+            ret = utils.get_reference(doc, pattern='github')
+
             self.assertEqual(ret, [None, k][v])
 
     def test_find_(self):
@@ -103,13 +115,27 @@ class TestUtils(unittest.TestCase):
         """Test NVD feed transformation to pandas.DataFrame object."""
         from pandas import DataFrame
 
-        # test without handler
-        cves = list(NVD.from_feeds(['recent']).cves())
-        df = utils.nvd_to_dataframe(cves)
+        with open("data/nvdcve-1.0-sample.json", 'r') as f:
+            data = json.load(f)['CVE_Items']
+
+        docs = [
+            model.Document.from_data(d)
+            for d in data
+        ]
+
+        collection = Collection(docs)
+
+        df = utils.nvd_to_dataframe(collection)
 
         self.assertIsNotNone(df)
         self.assertIsInstance(df, DataFrame)
 
-        # test with handler - should raise cause of missing gh token
-        with self.assertRaises(StatusError):
-            _ = utils.nvd_to_dataframe(cves, handler=GitHubHandler)
+        # test with handler - should not raise despite missing gh token,
+        #  but catch anyway
+        try:
+            df = utils.nvd_to_dataframe(collection, handler=GitHubHandler)
+        except StatusError:
+            pass
+
+        self.assertIsNotNone(df)
+        self.assertIsInstance(df, DataFrame)

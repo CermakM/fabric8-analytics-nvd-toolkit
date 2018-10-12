@@ -4,6 +4,8 @@ import argparse
 import re
 import typing
 
+from nvdlib.utils import rhasattr, rgetattr
+
 from toolkit.transformers.hooks import Hook
 
 
@@ -106,12 +108,12 @@ def has_reference(cve, url=None, pattern=None) -> bool:
     return False
 
 
-def get_reference(cve, url=None, pattern=None) -> typing.Union[str, None]:
+def get_reference(doc, url=None, pattern=None) -> typing.Union[str, None]:
     """Return reference (if exists) based on {url, pattern}.
 
     If multiple references are present, only the first encountered is returned.
 
-    :param cve: CVE object whose `references` attribute is an iterable of str references
+    :param doc: Document object whose `references` attribute is an iterable of str references
     :param url: str, if specified, requires exact match of cve reference with the given `url`
     argument and takes precedence over `pattern` argument
     :param pattern: str, regex expression used for comparison, `re.search()` method is used
@@ -119,19 +121,27 @@ def get_reference(cve, url=None, pattern=None) -> typing.Union[str, None]:
     :returns: str, cve reference matching one of {url, pattern}
     """
     assert any([url, pattern]), "either `url` or `pattern` must be provided"
-    assert hasattr(cve, 'references'), "cve object `%s` has no attribute `references`" % cve
-    assert isinstance(cve.references, typing.Iterable), "`cve.references` is not `Iterable`, " \
-                                                        "got: %s" % type(cve.references)
-    if url:
-        for ref in cve.references:
-            if url == ref:
-                return ref
-    else:
-        for ref in cve.references:
-            if re.search(pattern, ref):
-                return ref
+    assert rhasattr(doc, 'cve.references'), "doc object `%s` has no attribute `cve.references`" % doc
+    assert isinstance(doc.cve.references, typing.Iterable), "`doc.cve.references` is not `Iterable`, " \
+                                                            "got: %s" % type(doc.cve.references)
 
-    return None
+    references = rgetattr(doc, 'cve.references.url')
+    ret_val = None
+
+    if references:
+
+        if url:
+            for ref in rgetattr(doc, 'cve.references.url'):
+                if url == ref:
+                    ret_val = ref
+                    break
+        else:
+            for ref in rgetattr(doc, 'cve.references.url'):
+                if re.search(pattern, ref):
+                    ret_val = ref
+                    break
+
+    return ret_val
 
 
 # this function is meant to be used as a hook for LabelPreprocessor
@@ -154,7 +164,7 @@ def find_(word, stream, ignore_case=True):
     return match
 
 
-def nvd_to_dataframe(cve_list: typing.Iterable,
+def nvd_to_dataframe(collection: typing.Iterable,
                      handler=None):
     """Create a pandas DataFrame from nvdlib.NVD object.
 
@@ -162,7 +172,7 @@ def nvd_to_dataframe(cve_list: typing.Iterable,
     (which is not a requirement for the standard installation or
     for production usage)
 
-    :param cve_list: list of nvdlib.model.CVE objects
+    :param collection: Collection of nvdlib.model.Document objects
     :param handler: handler for cves, right now only GitHubHandler is supported
 
     :return: pandas.DataFrame
@@ -177,14 +187,14 @@ def nvd_to_dataframe(cve_list: typing.Iterable,
     project_langs = dict()
     # type: typing.Dict[tuple(username, project), dict{lang: int}]
 
-    for cve in cve_list:
+    for doc in collection:
         # Get reference supported by the handler to gather information
         # about the CVE
         username = project = None
         handle = None
 
         if handler is not None:
-            ref = get_reference(cve, pattern=handler.pattern)
+            ref = get_reference(doc, pattern=handler.pattern)
             if ref is None:
                 # does not match handlers pattern
                 continue
@@ -200,7 +210,7 @@ def nvd_to_dataframe(cve_list: typing.Iterable,
             projects.add((username, project))
 
             # query GitHub API for project languages
-            cve_languages = handle.languages()
+            cve_languages = handle.languages
             if not cve_languages:
                 cve_languages = dict()
 
@@ -208,8 +218,8 @@ def nvd_to_dataframe(cve_list: typing.Iterable,
             project_langs[(username, project)] = cve_languages
 
         data.append([
-            cve.cve_id,
-            cve.description,
+            doc.id_,
+            doc.cve.descriptions[0].value,
             username, project,
             getattr(handle, 'repository', None)
         ])

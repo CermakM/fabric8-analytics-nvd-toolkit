@@ -34,13 +34,6 @@ function prepare_venv() {
 [ "$NOVENV" == "1" ] || prepare_venv || exit 1
 
 
-# install nvdlib
-git clone https://github.com/msrb/nvdlib
-pushd nvdlib
-pip install -r requirements.txt
-python setup.py install
-popd
-
 # install the project
 pip install -r requirements.txt
 
